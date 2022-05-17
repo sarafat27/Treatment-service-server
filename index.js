@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 const { MongoClient, ServerApiVersion } = require('mongodb');
 require('dotenv').config()
 const app = express()
@@ -19,13 +20,29 @@ async function run() {
         await client.connect();
         const serviceCollection = client.db('treatment_service').collection('services')
         const bookingCollection = client.db('treatment_service').collection('bookings')
+        const userCollection = client.db('treatment_service').collection('users')
 
         app.get('/service', async (req, res) => {
             const query = {}
             const cursor = serviceCollection.find(query);
             const services = await cursor.toArray()
             res.send(services)
-        })
+        });
+
+        app.put('/user/:email', async (req, res) => {
+            const email = req.params.email;
+            const user = req.body;
+            const filter = { email: email };
+            const options = { upsert: true };
+            const updatedDoc = {
+                $set: user
+            }
+            const result = await userCollection.updateOne(filter, updatedDoc, options);
+            const token = jwt.sign({ email: email }, process.env.ACCESS_TOKEN_SECRET, {
+                expiresIn: '1h'
+            })
+            res.send({ result, token })
+        });
 
         //This is not the proper way to query
         //after learning more about mongodb,use aggregate lookup,pipeline,match,group  
@@ -51,6 +68,13 @@ async function run() {
                 service.slots = available
             })
             res.send(services)
+        });
+
+        app.get('/booking', async (req, res) => {
+            const patientEmail = req.query.patientEmail;
+            const query = { patientEmail }
+            const bookings = await bookingCollection.find(query).toArray();
+            res.send(bookings)
         })
 
         app.post('/booking', async (req, res) => {
@@ -62,7 +86,7 @@ async function run() {
             }
             const result = await bookingCollection.insertOne(booking);
             return res.send({ success: true, result })
-        })
+        });
 
         /**
          * API Naming Convention
@@ -70,6 +94,7 @@ async function run() {
          * app.get('/booking/:id') // get a specific booking 
          * app.post('/booking') // add a new booking
          * app.patch('/booking/:id) //
+         * app.put('/booking/:id) //upsert=>update(if exists)or insert(if doesn't exists)
          * app.delete('/booking/:id) //
         */
 
